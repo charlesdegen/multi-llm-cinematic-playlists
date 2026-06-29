@@ -7,3 +7,7 @@ font = "sans serif"
 
 [server]
 headless = true
+address = "127.0.0.1"
+port = 8501
+sslCertFile = ".streamlit/certs/cert.pem"
+sslKeyFile = ".streamlit/certs/key.pem"

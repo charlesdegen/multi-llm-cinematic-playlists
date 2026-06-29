@@ -25,6 +25,7 @@ st.set_page_config(
 
 # ----------------------------- CONSTANTS & HELPERS -----------------------------
 REQUIRED_FIELDS = ["position", "title", "artist", "why_this_track", "cinematic_moment"]
+DEFAULT_REDIRECT_URI = os.getenv("SPOTIFY_REDIRECT_URI", "https://127.0.0.1:8501/")
 
 def normalize_key(title: str, artist: str) -> str:
     """Create stable key for deduplication."""
@@ -126,7 +127,7 @@ def merge_tracks(all_imports: List[Dict]) -> pd.DataFrame:
 def get_spotify_client():
     client_id = st.session_state.get("spotify_client_id") or os.getenv("SPOTIFY_CLIENT_ID")
     client_secret = st.session_state.get("spotify_client_secret") or os.getenv("SPOTIFY_CLIENT_SECRET")
-    redirect_uri = st.session_state.get("spotify_redirect_uri", "http://localhost:8501")
+    redirect_uri = st.session_state.get("spotify_redirect_uri", DEFAULT_REDIRECT_URI)
     if not client_id or not client_secret: return None
     try:
         auth_manager = SpotifyOAuth(client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri,
@@ -175,16 +176,23 @@ with st.sidebar:
     st.header("Spotify Connection")
     client_id = st.text_input("Spotify Client ID", value=st.session_state.get("spotify_client_id", ""), type="password")
     client_secret = st.text_input("Spotify Client Secret", value=st.session_state.get("spotify_client_secret", ""), type="password")
-    redirect = st.text_input("Redirect URI", value="http://localhost:8501")
+    redirect = st.text_input(
+        "Redirect URI",
+        value=st.session_state.get("spotify_redirect_uri", DEFAULT_REDIRECT_URI),
+        help="Must match your Spotify dashboard character-for-character (https vs http, trailing slash, port).",
+    )
     if st.button("Save Credentials & Test"):
         st.session_state.spotify_client_id = client_id
         st.session_state.spotify_client_secret = client_secret
-        st.session_state.spotify_redirect_uri = redirect
+        st.session_state.spotify_redirect_uri = redirect.strip()
         if get_spotify_client():
             st.success("✅ Connected")
             st.session_state.spotify_connected = True
         else:
-            st.error("Failed")
+            st.error("Failed — check that Redirect URI matches Spotify dashboard exactly.")
+    saved_redirect = st.session_state.get("spotify_redirect_uri", redirect.strip())
+    if saved_redirect:
+        st.caption(f"Auth will send: `{saved_redirect}`")
     if st.session_state.get("spotify_connected"): st.success("Spotify connected")
     else: st.info("Enter credentials to enable playlist creation.")
 
