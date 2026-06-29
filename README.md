@@ -33,13 +33,23 @@ The result is a richer, more truthful "movie of your life right now" soundtrack 
 
 ```bash
 cd app
+cp .streamlit/secrets.toml.example .streamlit/secrets.toml  # add your Spotify credentials
+./start.sh
+```
+
+Or manually:
+
+```bash
+cd app
 python -m venv .venv
 source .venv/bin/activate  # or .venv\Scripts\activate on Windows
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Then open http://localhost:8501
+Then open **http://127.0.0.1:8501** (Spotify no longer allows `localhost` as a redirect URI).
+
+See [CHANGELOG.md](CHANGELOG.md) for setup details and recent fixes.
 
 ## Deploy (Free)
 
@@ -55,7 +65,7 @@ Even simpler for public demos.
 
 1. Go to https://developer.spotify.com/dashboard
 2. Create a new app.
-3. Set **Redirect URI** to: `http://localhost:8501` (for local) or your deployed URL.
+3. Set **Redirect URI** to: `http://127.0.0.1:8501` (for local) or your deployed HTTPS URL.
 4. Copy Client ID and Client Secret.
 5. In the app, you will be prompted to enter them on first use (or set as env vars / Streamlit secrets).
 
