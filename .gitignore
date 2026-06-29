@@ -9,11 +9,9 @@ __pycache__/
 env/
 venv/
 
-# Streamlit
-.streamlit/secrets.toml
-
-# Spotify cache
-.streamlit/spotify_cache
+# Streamlit secrets and Spotify OAuth cache (local only)
+**/.streamlit/secrets.toml
+**/.streamlit/spotify_cache
 
 # Local HTTPS certs (regenerate with: openssl req -x509 -newkey rsa:4096 -keyout app/.streamlit/certs/key.pem -out app/.streamlit/certs/cert.pem -days 365 -nodes -subj "/CN=127.0.0.1" -addext "subjectAltName=IP:127.0.0.1")
 app/.streamlit/certs/

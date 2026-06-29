@@ -25,7 +25,32 @@ st.set_page_config(
 
 # ----------------------------- CONSTANTS & HELPERS -----------------------------
 REQUIRED_FIELDS = ["position", "title", "artist", "why_this_track", "cinematic_moment"]
-DEFAULT_REDIRECT_URI = os.getenv("SPOTIFY_REDIRECT_URI", "https://127.0.0.1:8501/")
+DEFAULT_REDIRECT_URI = os.getenv("SPOTIFY_REDIRECT_URI", "http://127.0.0.1:8501")
+
+def _spotify_secret(key: str, default: str = "") -> str:
+    env_keys = {
+        "client_id": "SPOTIFY_CLIENT_ID",
+        "client_secret": "SPOTIFY_CLIENT_SECRET",
+        "redirect_uri": "SPOTIFY_REDIRECT_URI",
+    }
+    env_val = os.getenv(env_keys.get(key, ""), "")
+    if env_val:
+        return env_val
+    try:
+        return st.secrets["spotify"][key]
+    except (KeyError, FileNotFoundError, AttributeError, TypeError):
+        return default
+
+def ensure_spotify_defaults():
+    if not st.session_state.get("spotify_client_id"):
+        st.session_state.spotify_client_id = _spotify_secret("client_id")
+    if not st.session_state.get("spotify_client_secret"):
+        st.session_state.spotify_client_secret = _spotify_secret("client_secret")
+    secret_redirect = _spotify_secret("redirect_uri", DEFAULT_REDIRECT_URI)
+    if secret_redirect:
+        st.session_state.spotify_redirect_uri = secret_redirect
+    elif not st.session_state.get("spotify_redirect_uri"):
+        st.session_state.spotify_redirect_uri = DEFAULT_REDIRECT_URI
 
 def normalize_key(title: str, artist: str) -> str:
     """Create stable key for deduplication."""
@@ -124,18 +149,70 @@ def merge_tracks(all_imports: List[Dict]) -> pd.DataFrame:
     df["final_position"] = range(1, len(df) + 1)
     return df
 
-def get_spotify_client():
-    client_id = st.session_state.get("spotify_client_id") or os.getenv("SPOTIFY_CLIENT_ID")
-    client_secret = st.session_state.get("spotify_client_secret") or os.getenv("SPOTIFY_CLIENT_SECRET")
-    redirect_uri = st.session_state.get("spotify_redirect_uri", DEFAULT_REDIRECT_URI)
-    if not client_id or not client_secret: return None
+def get_spotify_credentials():
+    ensure_spotify_defaults()
+    client_id = st.session_state.get("spotify_client_id") or _spotify_secret("client_id")
+    client_secret = st.session_state.get("spotify_client_secret") or _spotify_secret("client_secret")
+    redirect_uri = st.session_state.get("spotify_redirect_uri") or _spotify_secret("redirect_uri", DEFAULT_REDIRECT_URI)
+    return client_id, client_secret, redirect_uri
+
+def make_auth_manager(client_id: str, client_secret: str, redirect_uri: str) -> SpotifyOAuth:
+    return SpotifyOAuth(
+        client_id=client_id,
+        client_secret=client_secret,
+        redirect_uri=redirect_uri,
+        scope="playlist-modify-private playlist-modify-public",
+        cache_path=".streamlit/spotify_cache",
+        show_dialog=True,
+        open_browser=False,
+    )
+
+def handle_oauth_callback():
+    """Complete Spotify OAuth when the user returns with ?code= in the URL."""
+    error = st.query_params.get("error")
+    if error:
+        st.session_state.spotify_auth_error = f"Spotify authorization denied: {error}"
+        st.query_params.clear()
+        return
+
+    code = st.query_params.get("code")
+    if not code:
+        return
+
+    client_id, client_secret, redirect_uri = get_spotify_credentials()
+    if not client_id or not client_secret:
+        st.session_state.spotify_auth_error = (
+            "Spotify authorized you, but credentials were lost. "
+            "Re-enter Client ID and Secret, save, then click Connect to Spotify again."
+        )
+        st.query_params.clear()
+        return
+
     try:
-        auth_manager = SpotifyOAuth(client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri,
-            scope="playlist-modify-private playlist-modify-public", cache_path=".streamlit/spotify_cache", show_dialog=True)
-        sp = spotipy.Spotify(auth_manager=auth_manager)
-        sp.current_user()
-        return sp
+        auth_manager = make_auth_manager(client_id, client_secret, redirect_uri)
+        auth_manager.get_access_token(code=code, as_dict=False, check_cache=False)
+        st.session_state.spotify_connected = True
+        st.session_state.pop("spotify_auth_error", None)
+        st.query_params.clear()
+        st.rerun()
     except Exception as e:
+        st.session_state.spotify_auth_error = f"Spotify auth failed: {e}"
+        st.query_params.clear()
+
+def get_spotify_client():
+    client_id, client_secret, redirect_uri = get_spotify_credentials()
+    if not client_id or not client_secret:
+        return None
+    try:
+        auth_manager = make_auth_manager(client_id, client_secret, redirect_uri)
+        token_info = auth_manager.validate_token(auth_manager.cache_handler.get_cached_token())
+        if not token_info:
+            st.session_state.spotify_connected = False
+            return None
+        st.session_state.spotify_connected = True
+        return spotipy.Spotify(auth_manager=auth_manager)
+    except Exception as e:
+        st.session_state.spotify_connected = False
         st.error(f"Spotify auth failed: {e}")
         return None
 
@@ -149,9 +226,8 @@ def search_track(sp, title, artist):
     return None
 
 def create_playlist_from_df(sp, df, name, description):
-    user = sp.current_user()
     try:
-        playlist = sp.user_playlist_create(user=user["id"], name=name, public=False, description=description[:300])
+        playlist = sp.current_user_playlist_create(name=name, public=False, description=description[:300])
         playlist_id = playlist["id"]
         playlist_url = playlist["external_urls"]["spotify"]
         uris, failed = [], []
@@ -168,33 +244,52 @@ def create_playlist_from_df(sp, df, name, description):
         st.error(f"Failed to create playlist: {e}")
         return None
 
+ensure_spotify_defaults()
+handle_oauth_callback()
+
 # UI
 st.title("🎬 Multi-LLM Cinematic Playlists")
 st.caption("Aggregate. Curate. Ship. — One soundtrack, many directors' cuts.")
+st.info("Local URL: **http://127.0.0.1:8501** — do not use `https://` or the track table will fail to load.")
 
 with st.sidebar:
     st.header("Spotify Connection")
-    client_id = st.text_input("Spotify Client ID", value=st.session_state.get("spotify_client_id", ""), type="password")
-    client_secret = st.text_input("Spotify Client Secret", value=st.session_state.get("spotify_client_secret", ""), type="password")
+    client_id = st.text_input("Spotify Client ID", value=st.session_state.get("spotify_client_id", ""), type="password", key="spotify_client_id_input")
+    client_secret = st.text_input("Spotify Client Secret", value=st.session_state.get("spotify_client_secret", ""), type="password", key="spotify_client_secret_input")
     redirect = st.text_input(
         "Redirect URI",
         value=st.session_state.get("spotify_redirect_uri", DEFAULT_REDIRECT_URI),
-        help="Must match your Spotify dashboard character-for-character (https vs http, trailing slash, port).",
+        help="Must match Spotify dashboard exactly. Local dev: http://127.0.0.1:8501",
     )
-    if st.button("Save Credentials & Test"):
+    if st.button("Save Credentials"):
         st.session_state.spotify_client_id = client_id
         st.session_state.spotify_client_secret = client_secret
         st.session_state.spotify_redirect_uri = redirect.strip()
-        if get_spotify_client():
-            st.success("✅ Connected")
-            st.session_state.spotify_connected = True
-        else:
-            st.error("Failed — check that Redirect URI matches Spotify dashboard exactly.")
+        st.session_state.spotify_connected = False
+        st.session_state.pop("spotify_auth_error", None)
+        st.success("Credentials saved")
+        st.rerun()
+
     saved_redirect = st.session_state.get("spotify_redirect_uri", redirect.strip())
     if saved_redirect:
         st.caption(f"Auth will send: `{saved_redirect}`")
-    if st.session_state.get("spotify_connected"): st.success("Spotify connected")
-    else: st.info("Enter credentials to enable playlist creation.")
+
+    if st.session_state.get("spotify_auth_error"):
+        st.error(st.session_state.spotify_auth_error)
+
+    sp = get_spotify_client()
+    if sp:
+        st.success("✅ Spotify connected")
+    elif st.session_state.get("spotify_client_id") and st.session_state.get("spotify_client_secret"):
+        auth_manager = make_auth_manager(
+            st.session_state.spotify_client_id,
+            st.session_state.spotify_client_secret,
+            st.session_state.get("spotify_redirect_uri", DEFAULT_REDIRECT_URI),
+        )
+        st.link_button("Connect to Spotify", auth_manager.get_authorize_url(), width="stretch")
+        st.caption("Click to authorize — you'll return here automatically.")
+    else:
+        st.info("Enter credentials and save to enable playlist creation.")
 
 st.header("1. Import LLM Responses")
 col1, col2 = st.columns([1, 2])
@@ -230,7 +325,7 @@ if "imports" in st.session_state and st.session_state.imports:
         display = df[["final_position", "title", "artist", "album", "why", "sources", "count"]].copy()
         display["sources"] = display["sources"].apply(lambda x: ", ".join(x))
         display = display.rename(columns={"final_position": "Pos", "title": "Track", "artist": "Artist", "album": "Album", "why": "Why it fits", "sources": "Recommended by", "count": "Votes"})
-        edited = st.data_editor(display, hide_index=True, use_container_width=True, num_rows="dynamic")
+        edited = st.data_editor(display, hide_index=True, width="stretch", num_rows="dynamic")
         if st.button("Apply Edits"):
             st.session_state.master_df = edited
             st.success("Edits saved")
