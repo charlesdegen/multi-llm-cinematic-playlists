@@ -12,6 +12,7 @@ import re
 from typing import Dict, List, Any, Optional
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
+from spotipy.cache_handler import CacheHandler
 from spotipy.exceptions import SpotifyException
 import os
 from datetime import datetime
@@ -89,12 +90,16 @@ def parse_llm_response(raw_text: str, source_name: str) -> Dict[str, Any]:
 
     tracks = []
     for t in data.get("tracks", []):
-        if not all(k in t for k in ["position", "title", "artist", "why_this_track", "cinematic_moment"]):
+        if not isinstance(t, dict) or not all(k in t for k in REQUIRED_FIELDS):
             continue
         key = normalize_key(t["title"], t["artist"])
+        try:
+            position = int(float(t.get("position", 99)))
+        except (TypeError, ValueError):
+            position = len(tracks) + 1
         tracks.append({
             "key": key,
-            "position": int(t.get("position", 99)),
+            "position": position,
             "title": t["title"].strip(),
             "artist": t["artist"].strip(),
             "album": t.get("album", "").strip(),
@@ -156,13 +161,23 @@ def get_spotify_credentials():
     redirect_uri = st.session_state.get("spotify_redirect_uri") or _spotify_secret("redirect_uri", DEFAULT_REDIRECT_URI)
     return client_id, client_secret, redirect_uri
 
+class SessionCacheHandler(CacheHandler):
+    """Keep the OAuth token in Streamlit session state so concurrent users
+    never share a token (a single cache file on disk would leak sessions)."""
+
+    def get_cached_token(self):
+        return st.session_state.get("spotify_token_info")
+
+    def save_token_to_cache(self, token_info):
+        st.session_state.spotify_token_info = token_info
+
 def make_auth_manager(client_id: str, client_secret: str, redirect_uri: str) -> SpotifyOAuth:
     return SpotifyOAuth(
         client_id=client_id,
         client_secret=client_secret,
         redirect_uri=redirect_uri,
         scope="playlist-modify-private playlist-modify-public",
-        cache_path=".streamlit/spotify_cache",
+        cache_handler=SessionCacheHandler(),
         show_dialog=True,
         open_browser=False,
     )
@@ -221,8 +236,8 @@ def search_track(sp, title, artist):
         results = sp.search(q=f'track:"{title}" artist:"{artist}"', limit=5, type="track")
         if results["tracks"]["items"]:
             return results["tracks"]["items"][0]["uri"]
-    except:
-        pass
+    except SpotifyException as e:
+        st.warning(f"Spotify search failed for {title} — {artist}: {e}")
     return None
 
 def create_playlist_from_df(sp, df, name, description):
@@ -302,6 +317,8 @@ with col1:
             parsed = parse_llm_response(raw_input, source_name)
             if not parsed.get("error"):
                 if "imports" not in st.session_state: st.session_state.imports = []
+                # Re-importing the same model replaces it instead of double-counting votes
+                st.session_state.imports = [i for i in st.session_state.imports if i["source"] != source_name]
                 st.session_state.imports.append(parsed)
                 st.success(f"Imported {len(parsed.get('tracks', []))} tracks")
                 st.rerun()
@@ -324,8 +341,20 @@ if "imports" in st.session_state and st.session_state.imports:
             st.markdown(f"**Primary Concept:** *{mc.get('title')}* — {mc.get('logline', '')}")
         display = df[["final_position", "title", "artist", "album", "why", "sources", "count"]].copy()
         display["sources"] = display["sources"].apply(lambda x: ", ".join(x))
-        display = display.rename(columns={"final_position": "Pos", "title": "Track", "artist": "Artist", "album": "Album", "why": "Why it fits", "sources": "Recommended by", "count": "Votes"})
-        edited = st.data_editor(display, hide_index=True, width="stretch", num_rows="dynamic")
+        # Keep canonical column names so edited rows still work for playlist creation;
+        # column_config only relabels the UI.
+        edited = st.data_editor(
+            display, hide_index=True, width="stretch", num_rows="dynamic",
+            column_config={
+                "final_position": st.column_config.NumberColumn("Pos"),
+                "title": st.column_config.TextColumn("Track"),
+                "artist": st.column_config.TextColumn("Artist"),
+                "album": st.column_config.TextColumn("Album"),
+                "why": st.column_config.TextColumn("Why it fits"),
+                "sources": st.column_config.TextColumn("Recommended by"),
+                "count": st.column_config.NumberColumn("Votes"),
+            },
+        )
         if st.button("Apply Edits"):
             st.session_state.master_df = edited
             st.success("Edits saved")

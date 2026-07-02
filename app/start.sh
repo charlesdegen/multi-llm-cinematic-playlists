@@ -13,5 +13,9 @@ fi
 lsof -ti:8501 | xargs kill 2>/dev/null || true
 sleep 1
 
-open "http://127.0.0.1:8501"
+if command -v open >/dev/null; then
+  open "http://127.0.0.1:8501"
+elif command -v xdg-open >/dev/null; then
+  xdg-open "http://127.0.0.1:8501"
+fi
 exec streamlit run app.py

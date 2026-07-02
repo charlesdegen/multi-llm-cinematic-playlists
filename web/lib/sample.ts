@@ -1,0 +1,33 @@
+/** Sample Claude response (docs/sample_claude_response.json) for one-click demo. */
+export const SAMPLE_RESPONSE = `{
+  "playlist_title": "THE ANTIFRAGILE ASCENT: Phase Zero Soundtrack",
+  "playlist_description": "The original score for a lone operator rewriting his operating system in the age of AI, defense tech, and relentless self-reconstruction. Cold precision meets controlled fire.",
+  "movie_concept": {
+    "title": "THE ANTIFRAGILE ASCENT",
+    "logline": "A disciplined builder at the edge of finance and frontier tech bets everything on becoming antifragile — physically, mentally, and strategically — before the next wave hits.",
+    "genre": "Neo-noir tech thriller / Origin story",
+    "tone": "Ice-cold focus, sudden violence of action, moments of stark beauty and quiet resolve"
+  },
+  "mood_tags": ["cold precision", "controlled rage", "dawn patrol", "system reboot", "asymmetric advantage"],
+  "narrative_arc": "The tracklist moves from pre-dawn ritual and internal recalibration, through rising operational tempo and confrontation with entropy, into a hard-won but still-contested new equilibrium.",
+  "tracks": [
+    {
+      "position": 1,
+      "title": "Time",
+      "artist": "Hans Zimmer",
+      "album": "Inception (Original Motion Picture Soundtrack)",
+      "why_this_track": "Opens the film with the exact feeling of a 4AM wake-up in a body that is being rebuilt.",
+      "cinematic_moment": "Black screen. Ice bath steam rises. First breath of the day.",
+      "energy": "low"
+    },
+    {
+      "position": 2,
+      "title": "The Night King",
+      "artist": "Ramin Djawadi",
+      "album": "Game of Thrones: Season 8",
+      "why_this_track": "The cold, patient march of disciplined systems against chaos.",
+      "cinematic_moment": "Montage of the operator moving through ice bath, sauna, heavy compounds before sunrise.",
+      "energy": "medium"
+    }
+  ]
+}`;
