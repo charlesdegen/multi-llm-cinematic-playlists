@@ -2,6 +2,35 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.0] — 2026-07-02
+
+Full redesign and platform migration: the primary app is now a thin, fully client-side Next.js/React app (`web/`) built to Apple Human Interface Guidelines with a Liquid Glass aesthetic. The Streamlit app remains as a fixed-up legacy option (`app/`).
+
+### Added
+
+- **`web/` — Next.js 15 + React 19 app**, static-exportable (`next build` → `web/out/`), no server required.
+- **Liquid Glass design system** (`web/app/globals.css`) — translucent blurred panels over an ambient cinematic gradient, hairline strokes, SF Pro/system type ramp, 8pt spacing grid, pill buttons, segmented controls, light & dark appearance, `prefers-reduced-motion` guard, visible focus rings, WCAG-minded label opacities.
+- **Spotify PKCE auth** — Authorization Code with PKCE entirely in the browser: no client secret, tokens in `localStorage` only, automatic refresh, per-user by construction.
+- **Match preview before playlist creation** — every track is searched on Spotify, scored with Sørensen–Dice fuzzy matching (title-weighted, best-of-credited-artists), shown with album art + confidence pill, with alternate-match dropdown and include/exclude toggles. 429 rate limits honored via `Retry-After`.
+- **Consensus vs. Narrative ordering** — segmented control switches the master tracklist between average-recommended-position (preserves the 4-act arc) and cross-model vote count.
+- **Directors' cuts panel** — each model's movie concept (title, genre, logline, mood-tag chips, narrative arc) side by side.
+- **Multi-file upload** import alongside paste; one-click **sample data** loader.
+- **Exports** — tracklist as JSON or CSV without connecting Spotify; full session save/restore as JSON plus automatic `localStorage` persistence.
+- **Unit tests** (Vitest) for JSON extraction, response parsing, merging/ordering, and fuzzy matching; **GitHub Actions CI** (typecheck, tests, build, legacy syntax check).
+- **LICENSE** (MIT) file.
+
+### Fixed (legacy Streamlit app)
+
+- **"Apply Edits" broke playlist creation** — the editor renamed dataframe columns (`title` → `Track`), so creating a playlist from an edited tracklist raised `KeyError`. Columns now keep canonical names and are relabeled via `column_config`.
+- **Shared OAuth token cache** — a single `spotify_cache` file meant concurrent users of a deployed instance shared one Spotify session. Tokens now live in per-session state via a `CacheHandler`.
+- **Crash on non-numeric `position`** values from sloppy LLM output.
+- **Bare `except` in track search** swallowed rate-limit and auth errors; now surfaces `SpotifyException`.
+- **Duplicate imports** of the same model replaced instead of double-counting votes.
+- **`start.sh`** no longer fails on Linux (`open` → `open`/`xdg-open` fallback).
+- Removed unused `rapidfuzz` dependency; added upper bounds to requirements.
+
+---
+
 ## [0.2.0] — 2026-06-28
 
 End-to-end local dev session: got Spotify OAuth working, fixed playlist creation against Spotify's 2026 API, and shipped a real private playlist ([LAMINAR — Phase Zero](https://open.spotify.com/playlist/1UVFi8NbNmr4JghKnR7z3y)).

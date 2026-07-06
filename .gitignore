@@ -16,6 +16,13 @@ venv/
 # Local HTTPS certs (regenerate with: openssl req -x509 -newkey rsa:4096 -keyout app/.streamlit/certs/key.pem -out app/.streamlit/certs/cert.pem -days 365 -nodes -subj "/CN=127.0.0.1" -addext "subjectAltName=IP:127.0.0.1")
 app/.streamlit/certs/
 
+# Node / Next.js (web app)
+node_modules/
+web/.next/
+web/out/
+web/*.tsbuildinfo
+web/next-env.d.ts
+
 # IDE
 .idea/
 .vscode/
